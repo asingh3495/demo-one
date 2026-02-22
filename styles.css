@@ -140,7 +140,7 @@ body {
 /* Summary cards */
 .summary-cards {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 1rem;
   margin-bottom: 2rem;
 }
@@ -452,6 +452,83 @@ body {
   display: block;
 }
 
+/* Insights (tips + trend) */
+.insights-section {
+  margin-top: 2rem;
+}
+
+.insights-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.3fr);
+  gap: 1rem;
+}
+
+.tips-card h2,
+.trend-card h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+
+.tips-list,
+.trend-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.tips-list li {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  position: relative;
+  padding-left: 1.3rem;
+}
+
+.tips-list li::before {
+  content: '•';
+  position: absolute;
+  left: 0.15rem;
+  color: var(--accent);
+}
+
+.trend-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.9rem;
+  padding: 0.45rem 0;
+  border-bottom: 1px dashed var(--border);
+}
+
+.trend-item:last-child {
+  border-bottom: none;
+}
+
+.trend-month {
+  color: var(--text-muted);
+}
+
+.trend-amount {
+  font-weight: 600;
+}
+
+.trend-status {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.trend-status.under {
+  color: var(--success);
+}
+
+.trend-status.over {
+  color: var(--danger);
+}
+
 /* Footer */
 .footer {
   margin-top: 2rem;
@@ -481,5 +558,9 @@ body {
 
   .quote-section {
     padding-right: 2.75rem;
+  }
+
+  .insights-grid {
+    grid-template-columns: 1fr;
   }
 }

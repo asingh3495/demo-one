@@ -30,6 +30,17 @@
           <span class="card-label">Total Spent</span>
           <span class="card-value" id="totalSpent">₹0</span>
         </div>
+        <div class="card summary-card income">
+          <span class="card-label">Monthly Income</span>
+          <input
+            type="number"
+            id="monthlyIncome"
+            class="budget-input"
+            placeholder="Set income (₹)"
+            min="0"
+            step="1000"
+          >
+        </div>
         <div class="card summary-card budget">
           <span class="card-label">Monthly Budget</span>
           <input type="number" id="monthlyBudget" class="budget-input" placeholder="Set budget (₹)" min="0" step="100">
@@ -86,6 +97,19 @@
         <div class="category-breakdown" id="categoryBreakdown"></div>
         <ul class="expense-list" id="expenseList"></ul>
         <p class="empty-state" id="emptyState">No expenses this month. Add one above!</p>
+      </section>
+
+      <section class="insights-section">
+        <div class="insights-grid">
+          <div class="card tips-card">
+            <h2>Budget coach</h2>
+            <ul class="tips-list" id="budgetTips"></ul>
+          </div>
+          <div class="card trend-card">
+            <h2>12‑month expense trend</h2>
+            <ul class="trend-list" id="yearTrendList"></ul>
+          </div>
+        </div>
       </section>
     </main>
 

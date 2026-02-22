@@ -19,10 +19,16 @@ const QUOTES = [
 
 const STORAGE_KEY = 'expense-tracker-data';
 const BUDGET_KEY = 'expense-tracker-budget';
+const INCOME_KEY = 'expense-tracker-income';
+
+// Use same origin when served by Express (e.g. http://localhost:3000)
+const API_BASE = '';
 
 let currentViewDate = new Date();
 let expenses = [];
 let monthlyBudget = 0;
+let monthlyIncome = 0;
+let useApi = false;
 
 // DOM elements
 const quoteText = document.getElementById('quoteText');
@@ -30,6 +36,7 @@ const quoteAuthor = document.getElementById('quoteAuthor');
 const quoteRefresh = document.getElementById('quoteRefresh');
 const totalSpentEl = document.getElementById('totalSpent');
 const remainingEl = document.getElementById('remaining');
+const monthlyIncomeInput = document.getElementById('monthlyIncome');
 const monthlyBudgetInput = document.getElementById('monthlyBudget');
 const expenseForm = document.getElementById('expenseForm');
 const expenseList = document.getElementById('expenseList');
@@ -38,6 +45,8 @@ const currentMonthEl = document.getElementById('currentMonth');
 const prevMonthBtn = document.getElementById('prevMonth');
 const nextMonthBtn = document.getElementById('nextMonth');
 const categoryBreakdownEl = document.getElementById('categoryBreakdown');
+const budgetTipsEl = document.getElementById('budgetTips');
+const yearTrendListEl = document.getElementById('yearTrendList');
 
 // Helpers
 function getYearMonth(d) {
@@ -49,24 +58,81 @@ function parseYearMonth(ym) {
   return new Date(y, m - 1, 1);
 }
 
-function loadData() {
+function getLast12MonthsRange() {
+  const now = new Date();
+  const to = new Date(now.getFullYear(), now.getMonth(), 1);
+  const from = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+  return {
+    from: `${from.getFullYear()}-${String(from.getMonth() + 1).padStart(2, '0')}`,
+    to: `${to.getFullYear()}-${String(to.getMonth() + 1).padStart(2, '0')}`,
+  };
+}
+
+async function loadData() {
+  try {
+    const { from, to } = getLast12MonthsRange();
+    const [expRes, setRes] = await Promise.all([
+      fetch(`${API_BASE}/api/expenses?from=${from}&to=${to}`),
+      fetch(`${API_BASE}/api/settings`),
+    ]);
+    if (expRes.ok && setRes.ok) {
+      expenses = await expRes.json();
+      const settings = await setRes.json();
+      monthlyBudget = settings.budget || 0;
+      monthlyIncome = settings.income || 0;
+      useApi = true;
+      return;
+    }
+  } catch (e) {
+    console.warn('API unavailable, using local storage:', e.message);
+  }
+  useApi = false;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     expenses = raw ? JSON.parse(raw) : [];
     const budgetRaw = localStorage.getItem(BUDGET_KEY);
     monthlyBudget = budgetRaw ? Number(budgetRaw) : 0;
+    const incomeRaw = localStorage.getItem(INCOME_KEY);
+    monthlyIncome = incomeRaw ? Number(incomeRaw) : 0;
   } catch (e) {
     expenses = [];
     monthlyBudget = 0;
+    monthlyIncome = 0;
   }
 }
 
-function saveData() {
+function saveDataLocal() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(expenses));
 }
 
-function saveBudget() {
+async function saveBudget() {
   localStorage.setItem(BUDGET_KEY, String(monthlyBudget));
+  if (useApi) {
+    try {
+      await fetch(`${API_BASE}/api/settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ budget: monthlyBudget, income: monthlyIncome }),
+      });
+    } catch (e) {
+      console.warn('Could not sync budget to server:', e.message);
+    }
+  }
+}
+
+async function saveIncome() {
+  localStorage.setItem(INCOME_KEY, String(monthlyIncome));
+  if (useApi) {
+    try {
+      await fetch(`${API_BASE}/api/settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ budget: monthlyBudget, income: monthlyIncome }),
+      });
+    } catch (e) {
+      console.warn('Could not sync income to server:', e.message);
+    }
+  }
 }
 
 function showQuote() {
@@ -151,13 +217,138 @@ function renderExpenseList(ym) {
     .join('');
 
   expenseList.querySelectorAll('.delete-expense').forEach((btn) => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       const id = btn.closest('.expense-item').dataset.id;
+      if (useApi) {
+        try {
+          const res = await fetch(`${API_BASE}/api/expenses/${id}`, { method: 'DELETE' });
+          if (!res.ok) throw new Error('Delete failed');
+        } catch (e) {
+          console.warn('Could not delete on server:', e.message);
+        }
+      }
       expenses = expenses.filter((e) => e.id !== id);
-      saveData();
+      saveDataLocal();
       render();
     });
   });
+}
+
+function renderBudgetTips(ym) {
+  if (!budgetTipsEl) return;
+  const tips = [];
+  const monthExpenses = getExpensesForMonth(ym);
+  const total = monthExpenses.reduce((sum, e) => sum + e.amount, 0);
+  const nowYm = getYearMonth(new Date());
+
+  // Generic tips when there is no budget set
+  if (!monthlyBudget) {
+    tips.push('Set a monthly budget so you can see how today\'s choices affect your savings.');
+    if (monthlyIncome) {
+      tips.push('Aim to keep expenses at or below 50–60% of your income so you always pay yourself first.');
+    } else {
+      tips.push('Try saving a fixed amount at the start of the month, then spend what\'s left with intention.');
+    }
+  } else {
+    const remaining = monthlyBudget - total;
+    const spentPct = monthlyBudget ? total / monthlyBudget : 0;
+
+    if (ym === nowYm) {
+      const today = new Date();
+      const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+      const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+      const daysPassed = today.getDate();
+      const daysInMonth = monthEnd.getDate();
+      const progressPct = daysPassed / daysInMonth;
+
+      if (spentPct < 0.5 && progressPct > 0.5) {
+        tips.push('You\'re spending less than half your budget and the month is halfway through — consider moving a bit more to savings.');
+      } else if (spentPct < progressPct) {
+        tips.push('You\'re currently spending slower than the month is passing — keep this pace to comfortably stay under budget.');
+      } else if (spentPct < 0.8) {
+        tips.push('You\'re slightly ahead of an ideal pace. Avoid big impulse buys for the next few days to rebalance.');
+      } else if (spentPct <= 1) {
+        tips.push('You\'re close to your budget. Press pause on non‑essential spending until bigger fixed bills are paid.');
+      } else {
+        tips.push('You\'ve crossed your budget. Pick one or two categories to trim for the rest of the month and set a strict daily cap.');
+      }
+    } else {
+      tips.push('Review this month\'s pattern and adjust next month\'s budget or income target to match reality.');
+    }
+
+    // Category‑based suggestion
+    if (monthExpenses.length > 0) {
+      const byCategory = {};
+      monthExpenses.forEach((e) => {
+        byCategory[e.category] = (byCategory[e.category] || 0) + e.amount;
+      });
+      const entries = Object.entries(byCategory).sort((a, b) => b[1] - a[1]);
+      const [topCat, topVal] = entries[0];
+      if (topVal / total > 0.4) {
+        tips.push(`Most of your spending is in "${topCat}". Planning those purchases in advance can free up room in your budget.`);
+      }
+    }
+
+    if (remaining > 0) {
+      tips.push(`You still have ${formatCurrency(remaining)} left in this month\'s budget — decide in advance what matters most for that amount.`);
+    } else if (remaining < 0) {
+      tips.push(`You\'re over budget by ${formatCurrency(Math.abs(remaining))}. Consider a no‑spend weekend or delaying a non‑essential purchase.`);
+    }
+  }
+
+  if (tips.length === 0) {
+    tips.push('Start by adding a few expenses and a budget — your personal tips will appear here.');
+  }
+
+  budgetTipsEl.innerHTML = tips
+    .slice(0, 4)
+    .map((t) => `<li>${t}</li>`)
+    .join('');
+}
+
+function renderYearTrend() {
+  if (!yearTrendListEl) return;
+
+  const now = new Date();
+  const months = [];
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push(d);
+  }
+
+  const monthData = months.map((d) => {
+    const ym = getYearMonth(d);
+    const monthExpenses = getExpensesForMonth(ym);
+    const total = monthExpenses.reduce((sum, e) => sum + e.amount, 0);
+    const label = d.toLocaleDateString('en-IN', { month: 'short' });
+    let status = '';
+    let statusClass = '';
+    if (monthlyIncome) {
+      const diff = monthlyIncome - total;
+      if (diff > 0) {
+        status = `Saved ${formatCurrency(diff)}`;
+        statusClass = 'under';
+      } else if (diff < 0) {
+        status = `Over income by ${formatCurrency(Math.abs(diff))}`;
+        statusClass = 'over';
+      } else {
+        status = 'Matched income';
+      }
+    }
+    return { ym, label, total, status, statusClass };
+  });
+
+  yearTrendListEl.innerHTML = monthData
+    .map(
+      (m) => `
+      <li class="trend-item">
+        <span class="trend-month">${m.label}</span>
+        <span class="trend-amount">${formatCurrency(m.total)}</span>
+        <span class="trend-status ${m.statusClass}">${m.status}</span>
+      </li>
+    `
+    )
+    .join('');
 }
 
 function render() {
@@ -166,12 +357,21 @@ function render() {
   renderSummary(ym);
   renderCategoryBreakdown(ym);
   renderExpenseList(ym);
+   renderBudgetTips(ym);
+   renderYearTrend();
 }
 
 // Form
 function initForm() {
   const today = new Date();
   document.getElementById('date').value = today.toISOString().slice(0, 10);
+
+  monthlyIncomeInput.value = monthlyIncome > 0 ? monthlyIncome : '';
+  monthlyIncomeInput.addEventListener('change', () => {
+    monthlyIncome = Math.max(0, Number(monthlyIncomeInput.value) || 0);
+    saveIncome();
+    render();
+  });
 
   monthlyBudgetInput.value = monthlyBudget > 0 ? monthlyBudget : '';
   monthlyBudgetInput.addEventListener('change', () => {
@@ -180,7 +380,7 @@ function initForm() {
     renderSummary(getYearMonth(currentViewDate));
   });
 
-  expenseForm.addEventListener('submit', (e) => {
+  expenseForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const category = document.getElementById('category').value;
     const amount = Math.max(0, Number(document.getElementById('amount').value) || 0);
@@ -189,14 +389,25 @@ function initForm() {
 
     if (!category || amount <= 0 || !date) return;
 
-    expenses.push({
-      id: crypto.randomUUID(),
-      category,
-      amount,
-      date,
-      note: note || null,
-    });
-    saveData();
+    const id = crypto.randomUUID();
+    const payload = { id, category, amount, date, note: note || null };
+
+    if (useApi) {
+      try {
+        const res = await fetch(`${API_BASE}/api/expenses`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) throw new Error('Save failed');
+      } catch (err) {
+        console.warn('Could not save to server, storing locally:', err.message);
+        useApi = false;
+      }
+    }
+
+    expenses.push(payload);
+    saveDataLocal();
     expenseForm.reset();
     document.getElementById('date').value = new Date().toISOString().slice(0, 10);
     render();
@@ -216,8 +427,8 @@ function initMonthNav() {
 }
 
 // Init
-function init() {
-  loadData();
+async function init() {
+  await loadData();
   showQuote();
   quoteRefresh.addEventListener('click', showQuote);
   initForm();
