@@ -47,6 +47,42 @@ const nextMonthBtn = document.getElementById('nextMonth');
 const categoryBreakdownEl = document.getElementById('categoryBreakdown');
 const budgetTipsEl = document.getElementById('budgetTips');
 const yearTrendListEl = document.getElementById('yearTrendList');
+const monthChartCanvas = document.getElementById('monthChartCanvas');
+const yearChartCanvas = document.getElementById('yearChartCanvas');
+const monthChartEmpty = document.getElementById('monthChartEmpty');
+const footerDataNote = document.getElementById('footerDataNote');
+
+// Chart instances (destroy before re-create)
+let yearChartInstance = null;
+let monthChartInstance = null;
+
+const CHART_COLORS = [
+  'rgb(13, 115, 119)',
+  'rgb(20, 163, 168)',
+  'rgb(45, 106, 79)',
+  'rgb(92, 92, 92)',
+  'rgb(199, 80, 80)',
+  'rgb(120, 100, 180)',
+  'rgb(200, 140, 60)',
+  'rgb(80, 160, 120)',
+];
+
+const CATEGORIES = [
+  'Food & Dining',
+  'Transport',
+  'Shopping',
+  'Bills & Utilities',
+  'Entertainment',
+  'Health',
+  'Education',
+  'Rent',
+  'Seed data',
+  'Other',
+];
+
+let editingId = null;
+
+const PEOPLE = ['Anamika', 'UV'];
 
 // Helpers
 function getYearMonth(d) {
@@ -76,7 +112,11 @@ async function loadData() {
       fetch(`${API_BASE}/api/settings`),
     ]);
     if (expRes.ok && setRes.ok) {
-      expenses = await expRes.json();
+      const raw = await expRes.json();
+      expenses = raw.map((e) => ({
+        ...e,
+        doneBy: e.doneBy || e.done_by || null,
+      }));
       const settings = await setRes.json();
       monthlyBudget = settings.budget || 0;
       monthlyIncome = settings.income || 0;
@@ -142,7 +182,11 @@ function showQuote() {
 }
 
 function getExpensesForMonth(ym) {
-  return expenses.filter((e) => e.date.startsWith(ym));
+  return expenses.filter((e) => e.date && String(e.date).startsWith(ym));
+}
+
+function amountNum(e) {
+  return Number(e.amount) || 0;
 }
 
 function formatCurrency(n) {
@@ -161,7 +205,7 @@ function formatMonthLabel(d) {
 // Render
 function renderSummary(ym) {
   const monthExpenses = getExpensesForMonth(ym);
-  const total = monthExpenses.reduce((sum, e) => sum + e.amount, 0);
+  const total = monthExpenses.reduce((sum, e) => sum + amountNum(e), 0);
   totalSpentEl.textContent = formatCurrency(total);
   const remaining = monthlyBudget > 0 ? monthlyBudget - total : 0;
   remainingEl.textContent = formatCurrency(remaining);
@@ -172,7 +216,8 @@ function renderCategoryBreakdown(ym) {
   const monthExpenses = getExpensesForMonth(ym);
   const byCategory = {};
   monthExpenses.forEach((e) => {
-    byCategory[e.category] = (byCategory[e.category] || 0) + e.amount;
+    const amt = amountNum(e);
+    byCategory[e.category] = (byCategory[e.category] || 0) + amt;
   });
   const entries = Object.entries(byCategory).sort((a, b) => b[1] - a[1]);
   if (entries.length === 0) {
@@ -187,6 +232,14 @@ function renderCategoryBreakdown(ym) {
     .join('');
 }
 
+function categoryOptions(selected) {
+  const opts = [...CATEGORIES];
+  if (selected && !opts.includes(selected)) opts.push(selected);
+  return opts
+    .map((c) => `<option value="${c}" ${c === selected ? 'selected' : ''}>${c}</option>`)
+    .join('');
+}
+
 function renderExpenseList(ym) {
   const monthExpenses = getExpensesForMonth(ym).sort(
     (a, b) => new Date(b.date) - new Date(a.date)
@@ -195,25 +248,58 @@ function renderExpenseList(ym) {
     expenseList.innerHTML = '';
     expenseList.classList.remove('has-items');
     emptyState.classList.add('visible');
+    editingId = null;
     return;
   }
   expenseList.classList.add('has-items');
   emptyState.classList.remove('visible');
   expenseList.innerHTML = monthExpenses
-    .map(
-      (e) => `
+    .map((e) => {
+      if (e.id === editingId) {
+        return `
+    <li class="expense-item expense-item--editing" data-id="${e.id}">
+      <form class="expense-edit-form" data-id="${e.id}">
+        <div class="expense-edit-fields">
+          <select name="category" class="expense-edit-input" required>
+            <option value="">Category</option>
+            ${categoryOptions(e.category)}
+          </select>
+          <select name="doneBy" class="expense-edit-input">
+            <option value="">Who paid</option>
+            ${PEOPLE.map(
+              (p) => `<option value="${p}" ${p === (e.doneBy || '') ? 'selected' : ''}>${p}</option>`
+            ).join('')}
+          </select>
+          <input type="number" name="amount" class="expense-edit-input" value="${e.amount}" min="0.01" step="0.01" placeholder="Amount" required>
+          <input type="date" name="date" class="expense-edit-input" value="${e.date}" required>
+          <input type="text" name="note" class="expense-edit-input" value="${e.note || ''}" placeholder="Note">
+        </div>
+        <div class="expense-edit-actions">
+          <button type="submit" class="btn btn-primary btn-sm">Save</button>
+          <button type="button" class="btn btn-outline btn-sm cancel-edit">Cancel</button>
+        </div>
+      </form>
+    </li>
+  `;
+      }
+      return `
     <li class="expense-item" data-id="${e.id}">
       <div class="expense-info">
         <span class="expense-category">${e.category}</span>
         <div class="expense-meta">
-          ${formatDate(e.date)}${e.note ? ` <span class="expense-note">— ${e.note}</span>` : ''}
+          ${formatDate(e.date)}${e.note ? ` <span class="expense-note">— ${e.note}</span>` : ''}${
+            e.doneBy ? ` · <span class="expense-note">by ${e.doneBy}</span>` : ''
+          }
         </div>
       </div>
       <span class="expense-amount">${formatCurrency(e.amount)}</span>
-      <button type="button" class="btn btn-danger expense-actions delete-expense" aria-label="Delete">Delete</button>
+      <div class="expense-actions">
+        <button type="button" class="btn btn-edit edit-expense" aria-label="Edit">Edit</button>
+        <button type="button" class="btn btn-danger delete-expense" aria-label="Delete">Delete</button>
+      </div>
     </li>
-  `
-    )
+  `;
+    })
     .join('');
 
   expenseList.querySelectorAll('.delete-expense').forEach((btn) => {
@@ -232,13 +318,62 @@ function renderExpenseList(ym) {
       render();
     });
   });
+
+  expenseList.querySelectorAll('.edit-expense').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      editingId = btn.closest('.expense-item').dataset.id;
+      render();
+    });
+  });
+
+  expenseList.querySelectorAll('.cancel-edit').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      editingId = null;
+      render();
+    });
+  });
+
+  expenseList.querySelectorAll('.expense-edit-form').forEach((form) => {
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const id = form.dataset.id;
+      const category = form.querySelector('[name="category"]').value;
+      const doneBy = form.querySelector('[name="doneBy"]').value || null;
+      const amount = Math.max(0, Number(form.querySelector('[name="amount"]').value) || 0);
+      const date = form.querySelector('[name="date"]').value;
+      const note = form.querySelector('[name="note"]').value.trim();
+
+      if (!category || amount <= 0 || !date) return;
+
+      if (useApi) {
+        try {
+          const res = await fetch(`${API_BASE}/api/expenses/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ category, amount, date, note: note || null, doneBy }),
+          });
+          if (!res.ok) throw new Error('Update failed');
+        } catch (err) {
+          console.warn('Could not update on server:', err.message);
+        }
+      }
+
+      const idx = expenses.findIndex((x) => x.id === id);
+      if (idx !== -1) {
+        expenses[idx] = { ...expenses[idx], category, amount, date, note: note || null, doneBy };
+      }
+      saveDataLocal();
+      editingId = null;
+      render();
+    });
+  });
 }
 
 function renderBudgetTips(ym) {
   if (!budgetTipsEl) return;
   const tips = [];
   const monthExpenses = getExpensesForMonth(ym);
-  const total = monthExpenses.reduce((sum, e) => sum + e.amount, 0);
+  const total = monthExpenses.reduce((sum, e) => sum + amountNum(e), 0);
   const nowYm = getYearMonth(new Date());
 
   // Generic tips when there is no budget set
@@ -280,7 +415,7 @@ function renderBudgetTips(ym) {
     if (monthExpenses.length > 0) {
       const byCategory = {};
       monthExpenses.forEach((e) => {
-        byCategory[e.category] = (byCategory[e.category] || 0) + e.amount;
+        byCategory[e.category] = (byCategory[e.category] || 0) + amountNum(e);
       });
       const entries = Object.entries(byCategory).sort((a, b) => b[1] - a[1]);
       const [topCat, topVal] = entries[0];
@@ -306,9 +441,57 @@ function renderBudgetTips(ym) {
     .join('');
 }
 
-function renderYearTrend() {
-  if (!yearTrendListEl) return;
+function renderMonthChart(ym) {
+  if (!monthChartCanvas || typeof Chart === 'undefined') return;
+  const monthExpenses = getExpensesForMonth(ym);
+  const byCategory = {};
+  monthExpenses.forEach((e) => {
+    byCategory[e.category] = (byCategory[e.category] || 0) + amountNum(e);
+  });
+  const entries = Object.entries(byCategory).sort((a, b) => b[1] - a[1]);
 
+  if (monthChartInstance) {
+    monthChartInstance.destroy();
+    monthChartInstance = null;
+  }
+
+  if (entries.length === 0) {
+    monthChartCanvas.style.display = 'none';
+    if (monthChartEmpty) {
+      monthChartEmpty.classList.add('visible');
+    }
+    return;
+  }
+
+  if (monthChartEmpty) monthChartEmpty.classList.remove('visible');
+  monthChartCanvas.style.display = 'block';
+
+  const labels = entries.map(([c]) => c);
+  const data = entries.map(([, v]) => v);
+  const colors = labels.map((_, i) => CHART_COLORS[i % CHART_COLORS.length]);
+
+  monthChartInstance = new Chart(monthChartCanvas, {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{ data, backgroundColor: colors, borderWidth: 0 }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'bottom' },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => `${ctx.label}: ${formatCurrency(ctx.raw)}`,
+          },
+        },
+      },
+    },
+  });
+}
+
+function renderYearTrend() {
   const now = new Date();
   const months = [];
   for (let i = 11; i >= 0; i--) {
@@ -319,7 +502,17 @@ function renderYearTrend() {
   const monthData = months.map((d) => {
     const ym = getYearMonth(d);
     const monthExpenses = getExpensesForMonth(ym);
-    const total = monthExpenses.reduce((sum, e) => sum + e.amount, 0);
+    const totalsByPerson = monthExpenses.reduce(
+      (acc, e) => {
+        const amt = amountNum(e);
+        const who = e.doneBy || 'Unknown';
+        acc[who] = (acc[who] || 0) + amt;
+        acc.total += amt;
+        return acc;
+      },
+      { total: 0 }
+    );
+    const total = totalsByPerson.total;
     const label = d.toLocaleDateString('en-IN', { month: 'short' });
     let status = '';
     let statusClass = '';
@@ -335,20 +528,83 @@ function renderYearTrend() {
         status = 'Matched income';
       }
     }
-    return { ym, label, total, status, statusClass };
+    return {
+      ym,
+      label,
+      total,
+      status,
+      statusClass,
+      uv: totalsByPerson['UV'] || 0,
+      anamika: totalsByPerson['Anamika'] || 0,
+    };
   });
 
-  yearTrendListEl.innerHTML = monthData
-    .map(
-      (m) => `
+  if (yearTrendListEl) {
+    yearTrendListEl.innerHTML = monthData
+      .map(
+        (m) => `
       <li class="trend-item">
         <span class="trend-month">${m.label}</span>
         <span class="trend-amount">${formatCurrency(m.total)}</span>
-        <span class="trend-status ${m.statusClass}">${m.status}</span>
+        <span class="trend-status ${m.statusClass}">
+          ${m.status}
+          ${m.uv || m.anamika ? ` · UV: ${formatCurrency(m.uv)} · Anamika: ${formatCurrency(m.anamika)}` : ''}
+        </span>
       </li>
     `
-    )
-    .join('');
+      )
+      .join('');
+  }
+
+  if (yearChartCanvas && typeof Chart !== 'undefined') {
+    if (yearChartInstance) {
+      yearChartInstance.destroy();
+      yearChartInstance = null;
+    }
+    const labels = monthData.map((m) => m.label);
+    const dataUv = monthData.map((m) => m.uv);
+    const dataAnamika = monthData.map((m) => m.anamika);
+    yearChartInstance = new Chart(yearChartCanvas, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'UV',
+            data: dataUv,
+            backgroundColor: CHART_COLORS[0],
+            borderRadius: 4,
+          },
+          {
+            label: 'Anamika',
+            data: dataAnamika,
+            backgroundColor: CHART_COLORS[1],
+            borderRadius: 4,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: {
+              callback: (v) => '₹' + (v >= 1000 ? v / 1000 + 'k' : v),
+            },
+          },
+        },
+        plugins: {
+          legend: { display: true },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => formatCurrency(ctx.raw),
+            },
+          },
+        },
+      },
+    });
+  }
 }
 
 function render() {
@@ -356,15 +612,22 @@ function render() {
   currentMonthEl.textContent = formatMonthLabel(currentViewDate);
   renderSummary(ym);
   renderCategoryBreakdown(ym);
+  renderMonthChart(ym);
   renderExpenseList(ym);
-   renderBudgetTips(ym);
-   renderYearTrend();
+  renderBudgetTips(ym);
+  renderYearTrend();
+  if (footerDataNote) {
+    footerDataNote.textContent = useApi
+      ? 'Data loaded from your local database. Your numbers stay private.'
+      : 'Using browser storage. Run npm start and open http://localhost:3000 to use the database.';
+  }
 }
 
 // Form
 function initForm() {
   const today = new Date();
   document.getElementById('date').value = today.toISOString().slice(0, 10);
+  const doneByInput = document.getElementById('doneBy');
 
   monthlyIncomeInput.value = monthlyIncome > 0 ? monthlyIncome : '';
   monthlyIncomeInput.addEventListener('change', () => {
@@ -386,11 +649,12 @@ function initForm() {
     const amount = Math.max(0, Number(document.getElementById('amount').value) || 0);
     const date = document.getElementById('date').value;
     const note = document.getElementById('note').value.trim();
+    const doneBy = doneByInput ? doneByInput.value || null : null;
 
     if (!category || amount <= 0 || !date) return;
 
     const id = crypto.randomUUID();
-    const payload = { id, category, amount, date, note: note || null };
+    const payload = { id, category, amount, date, note: note || null, doneBy };
 
     if (useApi) {
       try {
@@ -423,6 +687,19 @@ function initMonthNav() {
   nextMonthBtn.addEventListener('click', () => {
     currentViewDate.setMonth(currentViewDate.getMonth() + 1);
     render();
+  });
+}
+
+// Refresh from database (so trend matches DB)
+const refreshFromDbBtn = document.getElementById('refreshFromDb');
+if (refreshFromDbBtn) {
+  refreshFromDbBtn.addEventListener('click', async () => {
+    refreshFromDbBtn.disabled = true;
+    refreshFromDbBtn.textContent = '…';
+    await loadData();
+    render();
+    refreshFromDbBtn.textContent = 'Refresh';
+    refreshFromDbBtn.disabled = false;
   });
 }
 

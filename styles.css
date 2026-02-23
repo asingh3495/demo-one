@@ -434,6 +434,99 @@ body {
 
 .expense-actions {
   flex-shrink: 0;
+  display: flex;
+  gap: 0.35rem;
+}
+
+.btn-edit {
+  background: var(--accent-soft);
+  color: var(--accent);
+  padding: 0.4rem 0.6rem;
+  font-size: 0.85rem;
+}
+
+.btn-edit:hover {
+  background: rgba(13, 115, 119, 0.2);
+}
+
+/* Inline edit row */
+.expense-item--editing {
+  display: block;
+  padding: 0.75rem 0;
+}
+
+.expense-edit-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.expense-edit-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.expense-edit-input {
+  padding: 0.45rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-size: 0.85rem;
+  background: var(--bg);
+  color: var(--text);
+  min-width: 0;
+}
+
+.expense-edit-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.expense-edit-input[name="category"] {
+  min-width: 8rem;
+}
+
+.expense-edit-input[name="doneBy"] {
+  min-width: 7rem;
+}
+
+.expense-edit-input[name="amount"] {
+  width: 5.5rem;
+}
+
+.expense-edit-input[name="date"] {
+  width: 10rem;
+}
+
+.expense-edit-input[name="note"] {
+  flex: 1;
+  min-width: 6rem;
+}
+
+.expense-edit-actions {
+  display: flex;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.btn-sm {
+  padding: 0.45rem 0.75rem;
+  font-size: 0.85rem;
+}
+
+.btn-outline {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+.btn-outline:hover {
+  background: var(--bg);
+  color: var(--text);
 }
 
 .empty-state {
@@ -468,6 +561,18 @@ body {
   font-size: 1rem;
   font-weight: 600;
   margin-bottom: 0.75rem;
+}
+
+.trend-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.trend-card-header h2 {
+  margin-bottom: 0;
 }
 
 .tips-list,
@@ -527,6 +632,45 @@ body {
 
 .trend-status.over {
   color: var(--danger);
+}
+
+/* Charts */
+.chart-container {
+  position: relative;
+  width: 100%;
+  margin-bottom: 0.75rem;
+}
+
+.chart-container--year {
+  height: 220px;
+}
+
+.chart-container--month {
+  height: 220px;
+}
+
+.month-chart-wrap {
+  margin-bottom: 1rem;
+}
+
+.month-chart-wrap h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: var(--text);
+}
+
+.chart-empty {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 1rem;
+  margin: 0;
+  display: none;
+}
+
+.chart-empty.visible {
+  display: block;
 }
 
 /* Footer */
