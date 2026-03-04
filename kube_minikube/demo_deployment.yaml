@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: my-app
+  template:
+    metadata:
+      labels:
+        app: my-app
+    spec:
+      containers:
+      - name: app-container
+        image: ghcr.io/asingh3495/demo-one:latest
+        imagePullPolicy: IfNotPresent # Critical: Tells K8s to use the loaded image
+        command: ["node"]
+        args: ["/usr/src/app/server.js"]
+        ports:
+        - containerPort: 8080
+        volumeMounts:
+        - name: database-storage
+          mountPath: /Users/anamikasingh/demo-one/
+    volumes:
+      - name: database-storage
+        persistentVolumeClaim:
+          claimName: sqlite-pvc
